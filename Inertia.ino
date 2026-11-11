@@ -659,16 +659,16 @@ static void draw(uint32_t now) {
     uint16_t ink = shade(INK, 1), paper = shade(INK, 0);
     canvas.setFont(&fonts::Font4);
     String headline = String(score) + (score == 1 ? " star" : " stars");
-    const char* prompt = score > 0 && score >= bestScore ? "best so far - tap to play" : "tap to play again";
+    const char* prompt = score > 0 && score >= bestScore ? "best so far - tap to start" : "tap to start again";
     if (beforeFirstRun) {
       headline = "Inertia";
-      prompt = "lay it flat - tap to play";
+      prompt = "lay it flat - tap to start";
     }
     drawHaloText(headline, screenW / 2, screenH / 2 - 16,
                  ink, paper);
     canvas.setFont(&fonts::Font2);
-    drawHaloText(prompt,
-                 screenW / 2, screenH / 2 + 16, ink, paper);
+    drawHaloText(prompt, screenW / 2, screenH / 2 + 16, ink, paper);
+    drawHaloText("tilt gently to move", screenW / 2, screenH / 2 + 36, ink, paper);
   }
   // Nobody has tilted the device for a while: say what to do, until they do.
   if (idleSec >= IDLE_HINT_SEC) {
@@ -679,7 +679,7 @@ static void draw(uint32_t now) {
   if (now < noticeUntilMs) {
     canvas.setFont(&fonts::Font2);
     canvas.setTextDatum(middle_center);
-    drawHaloText(notice, screenW / 2, screenH / 2 + 40, shade(INK, 1), shade(INK, 0));
+    drawHaloText(notice, screenW / 2, screenH / 2 + 62, shade(INK, 1), shade(INK, 0));
   }
 
   canvas.pushSprite(0, 0);
