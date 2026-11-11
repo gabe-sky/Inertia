@@ -10,13 +10,16 @@
 // Touch:
 //   tap   start a run
 //   hold  re-set level (only while the device is lying roughly flat)
+//   tap the speaker icon, bottom left, to turn sound off or on
 //
 // The game is meant to be played lying flat on a surface or held flat like
 // a tray, and tipped from there. Level is trimmed at power-on and by a hold,
 // but only ever by a few degrees, so flat always stays flat.
 
 #include <M5Unified.h>
+#include <Preferences.h>
 #include <math.h>
+#include "sounds.h"  // the sound effects, made by tools/make_sounds.py
 
 // ---- Settings ----------------------------------------------------------
 // The puck (the "marble" feel chosen on the device).
@@ -72,6 +75,12 @@ static const float STAR_RADIUS     = 16.0f;
 static const int   TRAIL_LENGTH    = 14;     // frames of trail behind the puck
 static const float PHYSICS_STEP    = 1.0f / 120.0f;  // seconds; several steps per frame
 static const uint8_t SCREEN_BRIGHTNESS = 160;
+
+// Sound.
+static const uint8_t SOUND_VOLUME  = 90;     // overall loudness, 0..255
+static const float PUCK_TICK_MIN   = 40.0f;  // edge hits slower than this (pixels/sec) are silent
+static const float WEIGHT_THUD_MIN = 60.0f;  // the same for weights hitting an edge or each other
+static const int   MUTE_TAP_SIZE   = 44;     // the bottom-left square that takes the mute tap, pixels
 
 // ---- State -------------------------------------------------------------
 static M5Canvas canvas(&M5.Display);
@@ -133,6 +142,76 @@ static uint32_t lastPrintMs = 0;
 
 // A random number from 0 to 1.
 static float frand() { return (esp_random() & 0xFFFF) / 65535.0f; }
+
+// ---- Sound -------------------------------------------------------------
+// The effects are short recorded samples (see sounds.h). Each kind of sound
+// has its own speaker channel, so they overlap freely, and starting one never
+// waits on the speaker.
+static const int FX_CHANNEL = 0;      // stars, start, end of run, saucer caught
+static const int TICK_CHANNEL = 1;    // the puck on an edge
+static const int THUD_CHANNEL = 2;    // weights on an edge or each other
+static const int SAUCER_CHANNEL = 3;  // the saucer's twinkle
+
+static Preferences settings;              // remembers the mute choice across power-off
+static bool soundOn = true;
+static bool saucerHumming = false;        // whether the saucer's twinkle is playing
+static float puckTick = 0;                // hardest puck edge hit this frame, pixels/sec
+static float weightThud = 0;              // hardest weight hit this frame, pixels/sec
+
+// Plays a sample, cutting off whatever its channel was playing. `pitch`
+// speeds it up (above 1) or slows it down; `repeats` of 0 loops it until
+// the channel is stopped.
+static void playSound(const Sound& sound, int channel, float pitch = 1.0f, uint32_t repeats = 1) {
+  if (!soundOn) return;
+  M5.Speaker.playRaw(sound.samples, sound.count, (uint32_t)(SOUND_RATE * pitch), false,
+                     repeats ? repeats : UINT32_MAX, channel, true);
+}
+
+// The chime for a star. It climbs with each star towards the next weight;
+// the star that brings a weight has a warning under it.
+static void playStarChime(int starsSoFar, bool weightComing) {
+  static const Sound* const CHIMES[] = {&SND_STAR_0, &SND_STAR_1, &SND_STAR_2, &SND_STAR_3};
+  if (weightComing) {
+    playSound(SND_STAR_WEIGHT, FX_CHANNEL);
+    return;
+  }
+  int step = (starsSoFar + STARS_PER_WEIGHT - 1) % STARS_PER_WEIGHT;
+  playSound(*CHIMES[step < 4 ? step : 3], FX_CHANNEL);
+}
+
+// Call once per frame: plays this frame's tick and thud, and keeps the
+// saucer's twinkle going for as long as the saucer is on screen.
+static void updateSound() {
+  if (soundOn) {
+    // Harder hits are louder and, for the puck, a little higher.
+    if (puckTick > PUCK_TICK_MIN) {
+      float hard = fminf(puckTick / 500.0f, 1.0f);
+      M5.Speaker.setChannelVolume(TICK_CHANNEL, 60 + 195 * hard);
+      playSound(SND_TICK, TICK_CHANNEL, 0.8f + 0.5f * hard);
+    }
+    if (weightThud > WEIGHT_THUD_MIN) {
+      float hard = fminf(weightThud / 300.0f, 1.0f);
+      M5.Speaker.setChannelVolume(THUD_CHANNEL, 70 + 185 * hard);
+      playSound(SND_THUD, THUD_CHANNEL, 1.1f - 0.25f * hard);
+    }
+  }
+  bool shouldHum = soundOn && saucerFlying && !gameOver;
+  if (shouldHum && !saucerHumming) playSound(SND_SAUCER_LOOP, SAUCER_CHANNEL, 1.0f, 0);
+  if (!shouldHum && saucerHumming) M5.Speaker.stop(SAUCER_CHANNEL);
+  saucerHumming = shouldHum;
+  puckTick = weightThud = 0;
+}
+
+static void setSound(bool on) {
+  soundOn = on;
+  settings.putBool("sound", on);
+  if (on) {
+    playSound(SND_UNMUTE, FX_CHANNEL);
+  } else {
+    M5.Speaker.stop();
+    saucerHumming = false;
+  }
+}
 
 static void showNotice(const char* text, uint32_t now, uint32_t forMs) {
   notice = text;
@@ -273,6 +352,7 @@ static void collideWeights() {
       b.x += nx * overlap; b.y += ny * overlap;
       float closing = -((b.vx - a.vx) * nx + (b.vy - a.vy) * ny);
       if (closing <= 0) continue;
+      weightThud = fmaxf(weightThud, closing);
       float impulse = (1.0f + WEIGHT_BOUNCE) * closing * 0.5f;
       a.vx -= nx * impulse; a.vy -= ny * impulse;
       b.vx += nx * impulse; b.vy += ny * impulse;
@@ -313,6 +393,7 @@ static void updateSaucer(float dt) {
     vanishLeft = 1;
     weights[nearest] = weights[--weightCount];
     caught = true;
+    playSound(SND_CAUGHT, FX_CHANNEL);
   }
 
   if (caught || saucerX < -offScreen || saucerX > screenW + offScreen) {
@@ -324,6 +405,7 @@ static void updateSaucer(float dt) {
 static void stepPhysics(float dt, uint32_t now) {
   float impact = moveBody(puckX, puckY, puckVX, puckVY, PUCK_RADIUS, PUCK_ACCEL, PUCK_DRAG,
                           PUCK_BOUNCE, dt);
+  puckTick = fmaxf(puckTick, impact);
   if (impact > 40.0f) {
     float flash = impact / 300.0f;
     if (flash > 1) flash = 1;
@@ -336,7 +418,8 @@ static void stepPhysics(float dt, uint32_t now) {
       w.arriving -= dt;  // still fading in: it stays put and can't hurt
       continue;
     }
-    moveBody(w.x, w.y, w.vx, w.vy, WEIGHT_RADIUS, w.accel, WEIGHT_DRAG, WEIGHT_BOUNCE, dt);
+    weightThud = fmaxf(weightThud, moveBody(w.x, w.y, w.vx, w.vy, WEIGHT_RADIUS, w.accel,
+                                            WEIGHT_DRAG, WEIGHT_BOUNCE, dt));
   }
   collideWeights();
 
@@ -351,6 +434,8 @@ static void stepPhysics(float dt, uint32_t now) {
       gameOver = true;
       gameOverMs = now;
       caughtByPalette = w.palette;
+      // A new best gets a fanfare after the crash.
+      playSound(score > bestScore ? SND_GAME_OVER_BEST : SND_GAME_OVER, FX_CHANNEL);
       if (score > bestScore) bestScore = score;
       return;
     }
@@ -366,7 +451,9 @@ static void stepPhysics(float dt, uint32_t now) {
     flashX = starX;
     flashY = starY;
     placeStar();
-    if (score % STARS_PER_WEIGHT == 0) addWeight();
+    bool weightComing = score % STARS_PER_WEIGHT == 0 && weightCount < MAX_WEIGHTS;
+    if (weightComing) addWeight();
+    playStarChime(score, weightComing);
   }
 }
 
@@ -540,6 +627,26 @@ static void draw(uint32_t now) {
   canvas.setTextDatum(top_right);
   canvas.drawString("best " + String(bestScore), screenW - 4, 4);
 
+  // The sound icon, bottom left: a little speaker with two sound waves, or
+  // with a cross when muted.
+  {
+    uint16_t c = shade(TEXT, 1);
+    int x = 6, y = screenH - 13;                                 // the speaker's left edge and mid-height
+    canvas.fillRect(x, y - 3, 4, 7, c);                          // the box
+    canvas.fillTriangle(x + 2, y, x + 9, y - 7, x + 9, y + 7, c);  // the cone
+    if (soundOn) {
+      for (int wave = 0; wave < 2; wave++) {
+        int wx = x + 13 + wave * 4, half = 2 + wave * 2;
+        canvas.drawFastVLine(wx, y - half, half * 2 + 1, c);
+        canvas.drawLine(wx, y - half, wx - 2, y - half - 3, c);
+        canvas.drawLine(wx, y + half, wx - 2, y + half + 3, c);
+      }
+    } else {
+      canvas.drawLine(x + 12, y - 3, x + 18, y + 3, c);
+      canvas.drawLine(x + 12, y + 3, x + 18, y - 3, c);
+    }
+  }
+
   if (gameOver) {
     // Expanding circle where the puck was caught, then the result.
     float since = (now - gameOverMs) / 1000.0f;
@@ -582,6 +689,11 @@ void setup() {
   auto cfg = M5.config();
   M5.begin(cfg);
   Serial.begin(115200);
+
+  settings.begin("inertia");
+  soundOn = settings.getBool("sound", true);
+  M5.Speaker.begin();
+  M5.Speaker.setVolume(SOUND_VOLUME);
 
   M5.Display.setRotation(0);  // portrait, 240x320
   M5.Display.setColorDepth(16);
@@ -643,9 +755,13 @@ void loop() {
   // A short wait before a tap restarts, so a stray touch at the moment of
   // the crash doesn't skip the result.
   // Each run starts from a tap, so nothing moves until the player is ready.
-  if (touch.wasClicked() && gameOver && now - gameOverMs > 500) {
+  // A tap on the sound icon's corner only switches the sound.
+  if (touch.wasClicked() && touch.x < MUTE_TAP_SIZE && touch.y >= screenH - MUTE_TAP_SIZE) {
+    setSound(!soundOn);
+  } else if (touch.wasClicked() && gameOver && now - gameOverMs > 500) {
     startRun();
     beforeFirstRun = false;
+    playSound(SND_START, FX_CHANNEL);
   }
   if (touch.wasHold()) {
     showNotice(setLevel() ? "level set" : "lay it flat to set level", now, 1500);
@@ -679,6 +795,7 @@ void loop() {
   vanishLeft -= dt * 2.5f;
   if (vanishLeft < 0) vanishLeft = 0;
 
+  updateSound();
   draw(now);
 
   fpsFrames++;
