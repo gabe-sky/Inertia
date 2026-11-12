@@ -10,7 +10,7 @@
 // Touch:
 //   tap   start a run
 //   hold  re-set level (only while the device is lying roughly flat)
-//   tap the speaker icon, bottom left, to turn sound off or on
+//   tap the speaker icon, bottom left, to step the sound: off, normal, loud
 //
 // The game is meant to be played lying flat on a surface or held flat like
 // a tray, and tipped from there. Level is trimmed at power-on and by a hold,
@@ -77,10 +77,10 @@ static const float PHYSICS_STEP    = 1.0f / 120.0f;  // seconds; several steps p
 static const uint8_t SCREEN_BRIGHTNESS = 160;
 
 // Sound.
-static const uint8_t SOUND_VOLUME  = 90;     // overall loudness, 0..255
+static const uint8_t SOUND_VOLUMES[] = {0, 80, 160};  // loudness when off, normal and loud; 0..255
 static const float PUCK_TICK_MIN   = 40.0f;  // edge hits slower than this (pixels/sec) are silent
 static const float WEIGHT_THUD_MIN = 60.0f;  // the same for weights hitting an edge or each other
-static const int   MUTE_TAP_SIZE   = 44;     // the bottom-left square that takes the mute tap, pixels
+static const int   SOUND_TAP_SIZE  = 44;     // the bottom-left square that takes the sound tap, pixels
 
 // ---- State -------------------------------------------------------------
 static M5Canvas canvas(&M5.Display);
@@ -152,8 +152,8 @@ static const int TICK_CHANNEL = 1;    // the puck on an edge
 static const int THUD_CHANNEL = 2;    // weights on an edge or each other
 static const int SAUCER_CHANNEL = 3;  // the saucer's twinkle
 
-static Preferences settings;              // remembers the mute choice across power-off
-static bool soundOn = true;
+static Preferences settings;              // remembers the sound level across power-off
+static uint8_t soundLevel = 1;             // 0 = off, 1 = normal, 2 = loud
 static bool saucerHumming = false;        // whether the saucer's twinkle is playing
 static float puckTick = 0;                // hardest puck edge hit this frame, pixels/sec
 static float weightThud = 0;              // hardest weight hit this frame, pixels/sec
@@ -162,7 +162,7 @@ static float weightThud = 0;              // hardest weight hit this frame, pixe
 // speeds it up (above 1) or slows it down; `repeats` of 0 loops it until
 // the channel is stopped.
 static void playSound(const Sound& sound, int channel, float pitch = 1.0f, uint32_t repeats = 1) {
-  if (!soundOn) return;
+  if (soundLevel == 0) return;
   M5.Speaker.playRaw(sound.samples, sound.count, (uint32_t)(SOUND_RATE * pitch), false,
                      repeats ? repeats : UINT32_MAX, channel, true);
 }
@@ -182,7 +182,7 @@ static void playStarChime(int starsSoFar, bool weightComing) {
 // Call once per frame: plays this frame's tick and thud, and keeps the
 // saucer's twinkle going for as long as the saucer is on screen.
 static void updateSound() {
-  if (soundOn) {
+  if (soundLevel > 0) {
     // Harder hits are louder and, for the puck, a little higher.
     if (puckTick > PUCK_TICK_MIN) {
       float hard = fminf(puckTick / 500.0f, 1.0f);
@@ -195,17 +195,20 @@ static void updateSound() {
       playSound(SND_THUD, THUD_CHANNEL, 1.1f - 0.25f * hard);
     }
   }
-  bool shouldHum = soundOn && saucerFlying && !gameOver;
+  bool shouldHum = soundLevel > 0 && saucerFlying && !gameOver;
   if (shouldHum && !saucerHumming) playSound(SND_SAUCER_LOOP, SAUCER_CHANNEL, 1.0f, 0);
   if (!shouldHum && saucerHumming) M5.Speaker.stop(SAUCER_CHANNEL);
   saucerHumming = shouldHum;
   puckTick = weightThud = 0;
 }
 
-static void setSound(bool on) {
-  soundOn = on;
-  settings.putBool("sound", on);
-  if (on) {
+// Sets the sound to off (0), normal (1) or loud (2) and remembers it. A
+// blip at the new loudness confirms the change.
+static void setSoundLevel(uint8_t level) {
+  soundLevel = level;
+  settings.putUChar("level", level);
+  M5.Speaker.setVolume(SOUND_VOLUMES[level]);
+  if (level > 0) {
     playSound(SND_UNMUTE, FX_CHANNEL);
   } else {
     M5.Speaker.stop();
@@ -627,15 +630,15 @@ static void draw(uint32_t now) {
   canvas.setTextDatum(top_right);
   canvas.drawString("best " + String(bestScore), screenW - 4, 4);
 
-  // The sound icon, bottom left: a little speaker with two sound waves, or
-  // with a cross when muted.
+  // The sound icon, bottom left: a little speaker with one sound wave for
+  // normal, two for loud, or with a cross when off.
   {
     uint16_t c = shade(TEXT, 1);
     int x = 6, y = screenH - 13;                                 // the speaker's left edge and mid-height
     canvas.fillRect(x, y - 3, 4, 7, c);                          // the box
     canvas.fillTriangle(x + 2, y, x + 9, y - 7, x + 9, y + 7, c);  // the cone
-    if (soundOn) {
-      for (int wave = 0; wave < 2; wave++) {
+    if (soundLevel > 0) {
+      for (int wave = 0; wave < soundLevel; wave++) {
         int wx = x + 13 + wave * 4, half = 2 + wave * 2;
         canvas.drawFastVLine(wx, y - half, half * 2 + 1, c);
         canvas.drawLine(wx, y - half, wx - 2, y - half - 3, c);
@@ -691,9 +694,11 @@ void setup() {
   Serial.begin(115200);
 
   settings.begin("inertia");
-  soundOn = settings.getBool("sound", true);
+  // Before there were levels this was an on/off choice saved as "sound".
+  soundLevel = settings.getUChar("level", settings.getBool("sound", true) ? 1 : 0);
+  if (soundLevel > 2) soundLevel = 1;
   M5.Speaker.begin();
-  M5.Speaker.setVolume(SOUND_VOLUME);
+  M5.Speaker.setVolume(SOUND_VOLUMES[soundLevel]);
 
   M5.Display.setRotation(0);  // portrait, 240x320
   M5.Display.setColorDepth(16);
@@ -755,9 +760,9 @@ void loop() {
   // A short wait before a tap restarts, so a stray touch at the moment of
   // the crash doesn't skip the result.
   // Each run starts from a tap, so nothing moves until the player is ready.
-  // A tap on the sound icon's corner only switches the sound.
-  if (touch.wasClicked() && touch.x < MUTE_TAP_SIZE && touch.y >= screenH - MUTE_TAP_SIZE) {
-    setSound(!soundOn);
+  // A tap on the sound icon's corner only steps the sound: off, normal, loud.
+  if (touch.wasClicked() && touch.x < SOUND_TAP_SIZE && touch.y >= screenH - SOUND_TAP_SIZE) {
+    setSoundLevel((soundLevel + 1) % 3);
   } else if (touch.wasClicked() && gameOver && now - gameOverMs > 500) {
     startRun();
     beforeFirstRun = false;
