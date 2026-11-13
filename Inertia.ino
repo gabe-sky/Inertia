@@ -650,6 +650,33 @@ static void draw(uint32_t now) {
     }
   }
 
+  // The battery icon, bottom right: an outline that fills with the level,
+  // and a small lightning bolt to its left while charging. Reading the power
+  // chip is slow, so it is asked only once a second.
+  {
+    static uint32_t readMs = 0;
+    static int percent = -1;
+    static bool charging = false;
+    if (percent < 0 || now - readMs >= 1000) {
+      readMs = now;
+      percent = constrain((int)M5.Power.getBatteryLevel(), 0, 100);
+      charging = M5.Power.isCharging() == m5::Power_Class::is_charging;
+    }
+    uint16_t c = shade(TEXT, 1);
+    int y = screenH - 13;                        // mid-height, level with the speaker
+    int bx = screenW - 23, by = y - 4;           // the body's top left corner
+    canvas.drawRect(bx, by, 15, 9, c);           // the body
+    canvas.fillRect(bx + 15, y - 2, 2, 5, c);    // the tip
+    int fill = (percent * 11 + 50) / 100;
+    if (fill < 1 && percent > 0) fill = 1;
+    if (fill > 0) canvas.fillRect(bx + 2, by + 2, fill, 5, c);
+    if (charging) {
+      int cx = bx - 6;
+      canvas.fillTriangle(cx + 1, y - 5, cx - 3, y + 1, cx, y + 1, c);
+      canvas.fillTriangle(cx - 1, y + 5, cx + 3, y - 1, cx, y - 1, c);
+    }
+  }
+
   if (gameOver) {
     // Expanding circle where the puck was caught, then the result.
     float since = (now - gameOverMs) / 1000.0f;
