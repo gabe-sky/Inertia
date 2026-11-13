@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Makes Inertia's sound effects.
 
-The sounds are synthesised here with a port of the classic sfxr generator
+The sounds are synthesized here with a port of the classic sfxr generator
 (square, sawtooth, sine and noise waves shaped by an envelope, pitch slides,
 vibrato, a pitch jump, a phaser and two filters), then written out twice:
 
@@ -13,6 +13,9 @@ Run it again after changing a recipe below:
     python3 Inertia/tools/make_sounds.py
 
 It needs nothing beyond Python itself. The sounds are the same on every run.
+
+sfxr is by Tomas Pettersson (DrPetter), copyright (c) 2007, and is released
+under the MIT license: https://www.drpetter.se/project_sfxr.html
 """
 
 import math
@@ -75,7 +78,7 @@ def vibrato_hz(frequency):
     return math.sqrt(frequency * 2 * math.pi / SYNTH_RATE / 0.01)
 
 
-# ---- The synthesiser (a port of sfxr's SynthSample) ------------------------
+# ---- The synthesizer (a port of sfxr's SynthSample) ------------------------
 def synth(seed=1, **settings):
     """Returns one sound as a list of floats at SYNTH_RATE."""
     unknown = set(settings) - set(DEFAULTS)
@@ -262,7 +265,7 @@ def warning():
 def build():
     sounds = {}
 
-    # Stars climb a major scale towards the next weight.
+    # Stars climb a major scale toward the next weight.
     star_pitches = [988, 1109, 1245, 1319]  # B5, C#6, D#6, E6
     for i, pitch in enumerate(star_pitches):
         sounds["STAR_%d" % i] = finish(star(pitch), 0.80)

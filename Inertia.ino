@@ -1,7 +1,7 @@
 // Inertia: a tilt game for the M5Stack CoreS3
 //
 // Tilt the device and everything on screen feels it. Your puck, a little moon, is light: it
-// picks up speed quickly and stops quickly. The coloured weights are heavy: they
+// picks up speed quickly and stops quickly. The colored weights are heavy: they
 // are slow to get going and slow to stop. Steer the puck into the star to
 // score, without sloshing a weight into yourself. Every few stars another
 // weight joins in. Touching a weight ends the run. Now and then a flying
@@ -46,20 +46,20 @@ static const float LEVEL_TRIM_MAX  = 0.15f;  // setting level only works within 
 static const float IDLE_HINT_SEC   = 5.0f;   // a run left untilted this long shows a hint
 static const float TILT_SMOOTH_SEC = 0.04f;  // smoothing of hand shake; higher = calmer but laggier
 
-// Colours a weight can spawn in, after Kandinsky's concentric circles and
+// Colors a weight can spawn in, after Kandinsky's concentric circles and
 // Calder's flat primaries. `rim` is the disc; `core` is a contrasting disc
-// in its centre, which is bigger the heavier the weight is.
+// in its center, which is bigger the heavier the weight is.
 struct WeightPalette {
   uint8_t rim[3];
   uint8_t core[3];
 };
 static const WeightPalette WEIGHT_PALETTES[] = {
-  {{216,  40,  30}, { 22,  22,  28}},  // vermilion, black centre
-  {{246, 192,  18}, {216,  40,  30}},  // chrome yellow, vermilion centre
-  {{ 22,  22,  28}, {246, 192,  18}},  // black, yellow centre
-  {{112,  62, 152}, {246, 192,  18}},  // violet, yellow centre
-  {{ 28, 124,  86}, {238, 150, 160}},  // viridian green, pink centre
-  {{236, 120,  24}, { 26,  40,  92}},  // orange, navy centre
+  {{216,  40,  30}, { 22,  22,  28}},  // vermilion, black center
+  {{246, 192,  18}, {216,  40,  30}},  // chrome yellow, vermilion center
+  {{ 22,  22,  28}, {246, 192,  18}},  // black, yellow center
+  {{112,  62, 152}, {246, 192,  18}},  // violet, yellow center
+  {{ 28, 124,  86}, {238, 150, 160}},  // viridian green, pink center
+  {{236, 120,  24}, { 26,  40,  92}},  // orange, navy center
 };
 static const int WEIGHT_PALETTE_COUNT = sizeof(WEIGHT_PALETTES) / sizeof(WEIGHT_PALETTES[0]);
 
@@ -69,7 +69,7 @@ static const float SAUCER_SPEED       = 65.0f;  // pixels/sec; about 4 seconds t
 static const float SAUCER_WAIT_MIN    = 18.0f;  // seconds between visits, shortest
 static const float SAUCER_WAIT_MAX    = 32.0f;  // and longest
 static const int   SAUCER_MIN_WEIGHTS = 2;      // it only comes when there are at least this many
-static const float SAUCER_REACH       = 13.0f;  // how close the puck's edge must get to its centre
+static const float SAUCER_REACH       = 13.0f;  // how close the puck's edge must get to its center
 
 static const float STAR_RADIUS     = 16.0f;
 static const int   TRAIL_LENGTH    = 14;     // frames of trail behind the puck
@@ -98,7 +98,7 @@ static float levelX = 0, levelY = 0;      // the reading that counts as level; n
 static float idleSec = 0;                 // how long the current run has gone without any tilt
 static float pushX = 0, pushY = 0;        // this frame's push on everything, each -1..1
 
-static float puckX, puckY;                // centre, pixels
+static float puckX, puckY;                // center, pixels
 static float puckVX = 0, puckVY = 0;      // pixels per second
 static float puckFlash = 0;               // 1 just after hitting an edge, fading to 0
 static float moonPhase = 0.12f;           // 0 = new, 0.25 = first quarter, 0.5 = full, 0.75 = last quarter
@@ -113,10 +113,10 @@ struct Weight {
 };
 static Weight weights[MAX_WEIGHTS];
 static int weightCount = 0;
-static uint8_t caughtByPalette = 0;       // colours of the weight that ended the run
+static uint8_t caughtByPalette = 0;       // colors of the weight that ended the run
 
 static bool  saucerFlying = false;
-static float saucerX, saucerY;            // centre, pixels
+static float saucerX, saucerY;            // center, pixels
 static float saucerPathY;                 // the height it flies along; it bobs around this
 static float saucerDir;                   // +1 flying right, -1 flying left
 static float saucerWait = 0;              // seconds until the next visit
@@ -167,7 +167,7 @@ static void playSound(const Sound& sound, int channel, float pitch = 1.0f, uint3
                      repeats ? repeats : UINT32_MAX, channel, true);
 }
 
-// The chime for a star. It climbs with each star towards the next weight;
+// The chime for a star. It climbs with each star toward the next weight;
 // the star that brings a weight has a warning under it.
 static void playStarChime(int starsSoFar, bool weightComing) {
   static const Sound* const CHIMES[] = {&SND_STAR_0, &SND_STAR_1, &SND_STAR_2, &SND_STAR_3};
@@ -460,7 +460,7 @@ static void stepPhysics(float dt, uint32_t now) {
   }
 }
 
-// A colour between the background and `rgb`; amount 0 = background, 1 = rgb.
+// A color between the background and `rgb`; amount 0 = background, 1 = rgb.
 static uint16_t shade(const uint8_t rgb[3], float amount) {
   static const uint8_t bg[3] = {242, 234, 214};  // cream paper
   if (amount < 0) amount = 0;
@@ -470,7 +470,7 @@ static uint16_t shade(const uint8_t rgb[3], float amount) {
                         bg[2] + (rgb[2] - bg[2]) * amount);
 }
 
-// Fills a five-pointed star centred on (cx, cy). `radius` is to the tips and
+// Fills a five-pointed star centered on (cx, cy). `radius` is to the tips and
 // `angle` turns it, in radians; at 0 one tip points straight up.
 static void fillStar(float cx, float cy, float radius, float angle, uint16_t color) {
   float px[10], py[10];
@@ -489,7 +489,7 @@ static void fillStar(float cx, float cy, float radius, float angle, uint16_t col
   }
 }
 
-// Draws text in `color` with a 2-pixel `halo` colour around every letter, so
+// Draws text in `color` with a 2-pixel `halo` color around every letter, so
 // it stays readable over anything. Uses the canvas's current font and datum.
 static void drawHaloText(const String& text, int x, int y, uint16_t color, uint16_t halo) {
   canvas.setTextColor(halo);
@@ -505,7 +505,7 @@ static void drawHaloText(const String& text, int x, int y, uint16_t color, uint1
 
 static void draw(uint32_t now) {
   static const uint8_t PUCK[3]   = {24, 72, 190};    // cobalt blue; no weight is blue
-  static const uint8_t PUCK_HIT[3] = {8, 20, 70};    // the puck's colour just after an edge hit
+  static const uint8_t PUCK_HIT[3] = {8, 20, 70};    // the puck's color just after an edge hit
   static const uint8_t MOONLIGHT[3] = {255, 252, 240};  // the sunlit part of the moon
   static const uint8_t INK[3]    = {22, 22, 28};     // black, for lines and big text
   static const uint8_t STAR[3]   = {246, 192, 18};   // chrome yellow, outlined in black
@@ -527,7 +527,7 @@ static void draw(uint32_t now) {
   fillStar(starX, starY, size - 1.0f, turn, shade(STAR, 1));
 
   // Weights. One that is still arriving is a blinking warning sign; a solid one
-  // is a flat disc with a black outline and a contrasting centre, which is
+  // is a flat disc with a black outline and a contrasting center, which is
   // bigger the heavier it is.
   for (int i = 0; i < weightCount; i++) {
     const Weight& w = weights[i];
@@ -569,7 +569,7 @@ static void draw(uint32_t now) {
                       shade(INK, vanishLeft));
   }
 
-  // The flying saucer: a white dome behind a grey body, outlined in black,
+  // The flying saucer: a white dome behind a gray body, outlined in black,
   // with three lights that blink in turn.
   if (saucerFlying) {
     static const uint8_t SAUCER[3] = {150, 154, 160};
@@ -658,7 +658,7 @@ static void draw(uint32_t now) {
                         shade(WEIGHT_PALETTES[caughtByPalette].rim, 1 - since / 0.6f));
     }
     canvas.setTextDatum(middle_center);
-    // Black letters with a cream halo, so they read over weights of any colour.
+    // Black letters with a cream halo, so they read over weights of any color.
     uint16_t ink = shade(INK, 1), paper = shade(INK, 0);
     canvas.setFont(&fonts::Font4);
     String headline = String(score) + (score == 1 ? " star" : " stars");
